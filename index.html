@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>RJPQ test</title>
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         :root { --p1: #2196F3; --p2: #FF9800; --p3: #E91E63; --p4: #4CAF50; --bg: #121212; }
         * { touch-action: manipulation; box-sizing: border-box; }
@@ -60,17 +59,15 @@
 <div id="debug-log">系統日誌 > 準備就緒</div>
 
 <script>
-// --- [填入區] 請填入你截圖中的 Firebase 設定 ---
-const firebaseConfig = {
-    apiKey: "你的API_KEY",
-    databaseURL: "你的DATABASE_URL",
-    projectId: "rjpq-79e56",
-};
+let peer, hostConn, myRole = null, isHost = false, gameState = {};
+// 房主專用槽位管理
+let slots = { p2: null, p3: null, p4: null };
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-
-let myRole = null, isHost = false, roomId = null, gameState = {};
+const iceConfig = { iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun.services.mozilla.com" }
+]};
 
 function log(msg) {
     const d = document.getElementById('debug-log');
@@ -79,65 +76,118 @@ function log(msg) {
 }
 
 function start(asHost) {
-    roomId = document.getElementById('roomId').value;
-    if(!roomId) return alert("請輸入房號");
+    const rid = document.getElementById('roomId').value;
+    if(!rid) return alert("請輸入房號");
     isHost = asHost;
-    log(`正在初始化房間: ${roomId}...`);
+    
+    // 房主 ID 使用 v4 版確保不衝突
+    const peerId = asHost ? `rjpq-v4-${rid}` : null;
+    peer = new Peer(peerId, { config: iceConfig });
 
-    const playersRef = db.ref(`rooms/${roomId}/players`);
-
-    // 使用 Firebase 事務處理角色分配，確保 P1~P4 不會重複
-    playersRef.transaction((players) => {
-        players = players || {};
-        if (asHost) {
-            if (players.p1) return; // 房主位已被佔
-            players.p1 = { online: true };
+    peer.on('open', (id) => {
+        log(`我的網路 ID: ${id}`);
+        document.getElementById('conn-controls').style.display = 'none';
+        if(asHost) {
             myRole = 'p1';
+            showRole();
+            document.getElementById('host-tools').style.display = 'block';
+            document.getElementById('game').style.display = 'flex';
+            renderGrid();
+            log("房主模式：等待隊友連線...");
         } else {
-            if (!players.p1) return; // 沒房主不給進
-            if (!players.p2) { players.p2 = { online: true }; myRole = 'p2'; }
-            else if (!players.p3) { players.p3 = { online: true }; myRole = 'p3'; }
-            else if (!players.p4) { players.p4 = { online: true }; myRole = 'p4'; }
-            else return; // 滿了
+            log("隊友模式：嘗試尋找房主...");
+            connectToHost(`rjpq-v4-${rid}`);
         }
-        return players;
-    }, (error, committed, snapshot) => {
-        if (committed && myRole) {
-            initGame();
-        } else {
-            log(asHost ? "！！錯誤：此房號已有房主" : "！！錯誤：房間不存在或已滿");
-            alert(asHost ? "這房號已經有人開房了！" : "找不到房間或房間已滿！");
+    });
+
+    peer.on('connection', (c) => {
+        if(!isHost) return;
+        log(`偵測到新連線: ${c.peer}`);
+        
+        // 尋找空槽位
+        let role = null;
+        if (!slots.p2) role = 'p2';
+        else if (!slots.p3) role = 'p3';
+        else if (!slots.p4) role = 'p4';
+
+        if (!role) {
+            log("房間已滿，拒絕加入");
+            c.on('open', () => c.send({type: 'error', msg: '房間已滿'}));
+            return;
         }
+
+        slots[role] = c;
+        setupConn(c, role);
+    });
+
+    peer.on('error', (err) => {
+        log(`！！網路錯誤: ${err.type}`);
+        if(err.type === 'peer-unavailable') log("找不到房主，請確認房號是否正確且房主已開房。");
     });
 }
 
-function initGame() {
-    log(`連線成功！分配位置: ${myRole.toUpperCase()}`);
-    document.getElementById('conn-controls').style.display = 'none';
-    showRole();
-    document.getElementById('game').style.display = 'flex';
-    if(isHost) document.getElementById('host-tools').style.display = 'block';
+function connectToHost(hostId) {
+    hostConn = peer.connect(hostId, { reliable: true });
+    setupConn(hostConn, null);
+    
+    // 強制超時重連邏輯
+    setTimeout(() => {
+        if(!myRole) {
+            log("連線緩慢，嘗試第二次握手...");
+            hostConn.close();
+            hostConn = peer.connect(hostId, { reliable: true });
+            setupConn(hostConn, null);
+        }
+    }, 5000);
+}
 
-    // 斷線自動釋放位置
-    db.ref(`rooms/${roomId}/players/${myRole}`).onDisconnect().remove();
-
-    // 監聽格子更新
-    db.ref(`rooms/${roomId}/grid`).on('value', (snap) => {
-        gameState = snap.val() || {};
-        renderGrid();
+function setupConn(c, role) {
+    c.on('open', () => {
+        if(isHost) {
+            log(`已開啟數據通道: ${role.toUpperCase()}`);
+            c.send({type: 'assignRole', role: role});
+            c.send({type: 'sync', state: gameState});
+            updatePeerList();
+        } else {
+            log("已連上房主，等待分配角色...");
+        }
     });
 
-    // 房主專用：監聽玩家清單
-    if(isHost) {
-        db.ref(`rooms/${roomId}/players`).on('value', (snap) => {
-            updatePeerList(snap.val() || {});
-        });
-    }
+    c.on('data', (data) => {
+        if(data.type === 'assignRole') {
+            myRole = data.role;
+            showRole();
+            document.getElementById('game').style.display = 'flex';
+            log(`分配成功！你是 ${myRole.toUpperCase()}`);
+        } else if(data.type === 'sync' || data.type === 'update') {
+            gameState = data.state;
+            renderGrid();
+        } else if(data.type === 'reset') {
+            gameState = {};
+            renderGrid();
+            log("房主重置了遊戲");
+        } else if(data.type === 'kick') {
+            alert("你已被踢出");
+            location.reload();
+        } else if(data.type === 'error') {
+            alert(data.msg);
+            location.reload();
+        }
 
-    // 監聽是否被踢出
-    db.ref(`rooms/${roomId}/players/${myRole}/kicked`).on('value', (snap) => {
-        if(snap.val() === true) {
-            alert("你已被房主踢出");
+        // 核心：房主轉發數據給所有人 (Relay)
+        if(isHost && data.type === 'update') {
+            broadcast({type: 'sync', state: gameState});
+        }
+    });
+
+    c.on('close', () => {
+        if(isHost) {
+            log(`${role} 斷開連線`);
+            slots[role] = null;
+            updatePeerList();
+        } else {
+            log("房主斷開了，請重新加入");
+            alert("與房主斷開");
             location.reload();
         }
     });
@@ -148,6 +198,10 @@ function showRole() {
     el.style.display = 'block';
     el.className = 'bg-' + myRole;
     el.innerText = "你的位置: " + myRole.toUpperCase();
+}
+
+function broadcast(msg) {
+    for(let r in slots) if(slots[r] && slots[r].open) slots[r].send(msg);
 }
 
 function renderGrid() {
@@ -186,50 +240,45 @@ function getVMark(d) {
 function handleClick(r, c) {
     if(!myRole) return;
     const id = `r${r}c${c}`;
-    const d = gameState[id] || {};
-    let current = d[myRole] || 'N', next;
+    if(!gameState[id]) gameState[id] = {};
+    let current = gameState[id][myRole] || 'N', next;
     
     if(current === 'N') next = 'W';
     else if(current === 'W') {
-        if(Object.keys(d).some(p => d[p] === 'V')) { alert("隊友已佔用此格"); next = 'N'; }
+        // 防佔位
+        if(Object.keys(gameState[id]).some(p => gameState[id][p] === 'V')) { alert("隊友已佔用此格"); next = 'N'; }
         else next = 'V';
     } else next = 'N';
     
-    // 準備更新數據
-    let updates = {};
-    updates[`rooms/${roomId}/grid/${id}/${myRole}`] = next;
-
-    // 唯一解連動
+    gameState[id][myRole] = next;
     if(next === 'V') {
         for(let i=1; i<=4; i++) if(i !== c) {
-            updates[`rooms/${roomId}/grid/r${r}c${i}/${myRole}`] = 'W';
+            const oid = `r${r}c${i}`; if(!gameState[oid]) gameState[oid] = {};
+            gameState[oid][myRole] = 'W';
         }
     }
-    db.ref().update(updates);
+    renderGrid();
+    if(isHost) broadcast({type: 'sync', state: gameState});
+    else if(hostConn) hostConn.send({type: 'update', state: gameState});
 }
 
-function resetGame() { 
-    if(confirm("重置全場？")) {
-        db.ref(`rooms/${roomId}/grid`).remove();
-    } 
-}
+function resetGame() { if(confirm("重置全場？")) { gameState = {}; renderGrid(); broadcast({type: 'reset'}); } }
 
-function updatePeerList(players) {
+function updatePeerList() {
     const list = document.getElementById('peer-list');
     list.innerHTML = '房間名單：<br>P1 (房主: 你)<br>';
-    const roles = ['p2', 'p3', 'p4'];
-    roles.forEach(r => {
-        if(players[r]) {
+    for(let r in slots) {
+        if(slots[r]) {
             list.innerHTML += `${r.toUpperCase()} (連線中) <button class="kick-btn" onclick="kick('${r}')">踢</button><br>`;
         } else {
             list.innerHTML += `<span style="color:#555">${r.toUpperCase()} (空位)</span><br>`;
         }
-    });
+    }
 }
-
 function kick(role) { 
-    if(confirm(`確定要踢出 ${role.toUpperCase()} 嗎？`)) {
-        db.ref(`rooms/${roomId}/players/${role}`).update({ kicked: true });
+    if(slots[role]) {
+        slots[role].send({type: 'kick'}); 
+        setTimeout(() => { slots[role].close(); slots[role] = null; updatePeerList(); }, 300);
     }
 }
 </script>
