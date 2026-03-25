@@ -3,52 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>RJPQ 終極 Firebase 版</title>
+    <title>RJPQ test</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <style>
         :root { --p1: #2196F3; --p2: #FF9800; --p3: #E91E63; --p4: #4CAF50; --bg: #121212; }
         * { touch-action: manipulation; box-sizing: border-box; }
-        body { background: var(--bg); color: white; font-family: sans-serif; text-align: center; margin: 0; padding: 10px; }
-        
-        .panel { background: #222; padding: 12px; border-radius: 12px; margin-bottom: 10px; border: 1px solid #333; }
-        #role-tag { font-size: 16px; font-weight: bold; margin: 10px 0; padding: 8px; border-radius: 8px; display: none; }
+        body { background: var(--bg); color: white; font-family: sans-serif; text-align: center; margin: 0; padding: 10px; overflow-x: hidden; }
+        .panel { background: #222; padding: 15px; border-radius: 12px; margin-bottom: 10px; border: 1px solid #333; }
+        input { padding: 10px; border-radius: 6px; border: none; width: 140px; background: #333; color: white; font-size: 16px; }
+        button { padding: 10px 15px; border: none; border-radius: 6px; cursor: pointer; color: white; font-weight: bold; margin-top: 5px; }
+        #my-role-display { font-size: 16px; font-weight: bold; margin: 10px 0; padding: 10px; border-radius: 8px; display: none; }
         .bg-p1 { background: var(--p1); } .bg-p2 { background: var(--p2); } .bg-p3 { background: var(--p3); } .bg-p4 { background: var(--p4); }
-
-        /* 表格配置 */
-        .main-layout { display: flex; justify-content: center; gap: 5px; margin: 0 auto; max-width: 100vw; }
-        .row-labels { display: flex; flex-direction: column; gap: 4px; margin-top: 25px; }
-        .row-label { height: 45px; display: flex; align-items: center; justify-content: flex-end; width: 30px; color: #888; font-size: 11px; }
+        .main-layout { display: flex; justify-content: center; gap: 5px; margin: 0 auto; }
+        .row-labels { display: flex; flex-direction: column; gap: 4px; margin-top: 22px; }
+        .row-label { height: 45px; display: flex; align-items: center; justify-content: flex-end; width: 25px; color: #888; font-size: 11px; }
         .grid-container { width: 280px; }
-        .col-labels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 5px; color: #888; font-size: 13px; font-weight: bold; }
+        .col-labels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 5px; color: #888; font-size: 12px; }
         .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-        
         .cell { background: #2d2d2d; height: 45px; border-radius: 4px; border: 1px solid #444; position: relative; display: flex; align-items: center; justify-content: center; font-size: 20px; }
         .x { position: absolute; font-size: 10px; font-weight: bold; display: none; pointer-events: none; }
         .x1 { top: 2px; left: 4px; color: var(--p1); } .x2 { top: 2px; right: 4px; color: var(--p2); }
         .x3 { bottom: 2px; left: 4px; color: var(--p3); } .x4 { bottom: 2px; right: 4px; color: var(--p4); }
         .show { display: block; }
-        
-        /* 佔用樣式 */
         .v1 { border: 2px solid var(--p1); background: rgba(33,150,243,0.3); }
         .v2 { border: 2px solid var(--p2); background: rgba(255,152,0,0.3); }
         .v3 { border: 2px solid var(--p3); background: rgba(233,30,99,0.3); }
         .v4 { border: 2px solid var(--p4); background: rgba(76,175,80,0.3); }
-
-        .btn { padding: 8px 15px; border: none; border-radius: 6px; cursor: pointer; color: white; font-weight: bold; font-size: 14px; margin-top: 5px; }
-        .host-tools { border-top: 1px solid #444; margin-top: 10px; padding-top: 10px; }
+        #debug-log { font-size: 10px; color: #888; background: #000; padding: 10px; margin-top: 20px; border-radius: 5px; text-align: left; height: 100px; overflow-y: auto; line-height: 1.4; border: 1px solid #333; }
+        .kick-btn { background: #ff4444; font-size: 10px; padding: 2px 6px; margin-left: 10px; }
     </style>
 </head>
 <body>
 
-<div class="panel">
-    <div id="init-panel">
-        <input type="text" id="roomId" placeholder="房號 (如 123)" style="padding:8px; border-radius:4px; border:none; width:120px;">
-        <button class="btn" style="background: #e91e63;" onclick="connect()">開始連線</button>
+<div class="panel" id="lobby">
+    <div id="conn-controls">
+        <input type="text" id="roomId" placeholder="輸入房號">
+        <button onclick="start(true)" style="background: #e91e63;">創建房間</button>
+        <button onclick="start(false)" style="background: #444;">加入房間</button>
     </div>
-    <div id="role-tag"></div>
-    <div id="host-panel" class="host-tools" style="display:none;">
-        <button class="btn" style="background: #607d8b; width:100%;" onclick="resetAll()">房主重置 (下一場)</button>
+    <div id="my-role-display"></div>
+    <div id="host-tools" style="display:none; border-top:1px solid #444; margin-top:10px; padding-top:10px;">
+        <button onclick="resetGame()" style="background: #607d8b; width:100%;">下一場 (重置)</button>
+        <div id="peer-list" style="font-size: 12px; text-align: left; margin-top:10px;"></div>
     </div>
 </div>
 
@@ -60,74 +57,109 @@
     </div>
 </div>
 
+<div id="debug-log">系統日誌 > 準備就緒</div>
+
 <script>
-// --- 請填入你的 Firebase 設定 ---
+// --- [填入區] 請填入你截圖中的 Firebase 設定 ---
 const firebaseConfig = {
-    apiKey: "1:226816625045:web:bb501fb83c161e64318e9c",
-    databaseURL: "https://rjpq-79e56-default-rtdb.asia-southeast1.firebasedatabase.app/",
+    apiKey: "你的API_KEY",
+    databaseURL: "你的DATABASE_URL",
     projectId: "rjpq-79e56",
 };
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
-let myRole = null, roomId = null, myRef = null;
 
-function connect() {
+let myRole = null, isHost = false, roomId = null, gameState = {};
+
+function log(msg) {
+    const d = document.getElementById('debug-log');
+    d.innerHTML += `<br>> ${msg}`;
+    d.scrollTop = d.scrollHeight;
+}
+
+function start(asHost) {
     roomId = document.getElementById('roomId').value;
     if(!roomId) return alert("請輸入房號");
+    isHost = asHost;
+    log(`正在初始化房間: ${roomId}...`);
 
-    // 自動分配角色邏輯
-    const roomRef = db.ref('rooms/' + roomId + '/players');
-    roomRef.transaction((currentPlayers) => {
-        if (currentPlayers === null) return { p1: { online: true } };
-        if (!currentPlayers.p1) return { ...currentPlayers, p1: { online: true } };
-        if (!currentPlayers.p2) return { ...currentPlayers, p2: { online: true } };
-        if (!currentPlayers.p3) return { ...currentPlayers, p3: { online: true } };
-        if (!currentPlayers.p4) return { ...currentPlayers, p4: { online: true } };
-        return; // 房間已滿
+    const playersRef = db.ref(`rooms/${roomId}/players`);
+
+    // 使用 Firebase 事務處理角色分配，確保 P1~P4 不會重複
+    playersRef.transaction((players) => {
+        players = players || {};
+        if (asHost) {
+            if (players.p1) return; // 房主位已被佔
+            players.p1 = { online: true };
+            myRole = 'p1';
+        } else {
+            if (!players.p1) return; // 沒房主不給進
+            if (!players.p2) { players.p2 = { online: true }; myRole = 'p2'; }
+            else if (!players.p3) { players.p3 = { online: true }; myRole = 'p3'; }
+            else if (!players.p4) { players.p4 = { online: true }; myRole = 'p4'; }
+            else return; // 滿了
+        }
+        return players;
     }, (error, committed, snapshot) => {
-        if (committed) {
-            // 找出剛才分配給我的角色
-            const players = snapshot.val();
-            myRole = Object.keys(players).find(k => players[k].online && !myRef); 
-            // 這裡簡單處理：依序加入
+        if (committed && myRole) {
             initGame();
         } else {
-            alert("房間已滿或連線失敗");
+            log(asHost ? "！！錯誤：此房號已有房主" : "！！錯誤：房間不存在或已滿");
+            alert(asHost ? "這房號已經有人開房了！" : "找不到房間或房間已滿！");
         }
     });
 }
 
 function initGame() {
-    // 監聽自己的連線狀態，斷線自動釋放角色
-    myRef = db.ref(`rooms/${roomId}/players/${myRole}`);
-    myRef.onDisconnect().remove();
-
-    document.getElementById('init-panel').style.display = 'none';
-    const tag = document.getElementById('role-tag');
-    tag.innerText = "你的角色: " + myRole.toUpperCase();
-    tag.className = 'bg-' + myRole;
-    tag.style.display = 'block';
-    if(myRole === 'p1') document.getElementById('host-panel').style.display = 'block';
+    log(`連線成功！分配位置: ${myRole.toUpperCase()}`);
+    document.getElementById('conn-controls').style.display = 'none';
+    showRole();
     document.getElementById('game').style.display = 'flex';
+    if(isHost) document.getElementById('host-tools').style.display = 'block';
 
-    // 監聽格子資料同步
+    // 斷線自動釋放位置
+    db.ref(`rooms/${roomId}/players/${myRole}`).onDisconnect().remove();
+
+    // 監聽格子更新
     db.ref(`rooms/${roomId}/grid`).on('value', (snap) => {
-        renderGrid(snap.val() || {});
+        gameState = snap.val() || {};
+        renderGrid();
+    });
+
+    // 房主專用：監聽玩家清單
+    if(isHost) {
+        db.ref(`rooms/${roomId}/players`).on('value', (snap) => {
+            updatePeerList(snap.val() || {});
+        });
+    }
+
+    // 監聽是否被踢出
+    db.ref(`rooms/${roomId}/players/${myRole}/kicked`).on('value', (snap) => {
+        if(snap.val() === true) {
+            alert("你已被房主踢出");
+            location.reload();
+        }
     });
 }
 
-function renderGrid(data) {
+function showRole() {
+    const el = document.getElementById('my-role-display');
+    el.style.display = 'block';
+    el.className = 'bg-' + myRole;
+    el.innerText = "你的位置: " + myRole.toUpperCase();
+}
+
+function renderGrid() {
     const grid = document.getElementById('grid');
     const labelContainer = document.getElementById('row-labels');
     grid.innerHTML = ''; labelContainer.innerHTML = '';
-
     for (let r = 10; r >= 1; r--) {
         const lb = document.createElement('div');
         lb.className = 'row-label'; lb.innerText = r + 'F';
         labelContainer.appendChild(lb);
         for (let c = 1; c <= 4; c++) {
-            const id = `r${r}c${c}`, d = data[id] || {}, div = document.createElement('div');
+            const id = `r${r}c${c}`, d = gameState[id] || {}, div = document.createElement('div');
             div.className = `cell ${getVClass(d)}`;
             div.innerHTML = `
                 <div class="x x1 ${d.p1==='W'?'show':''}">X</div>
@@ -136,7 +168,7 @@ function renderGrid(data) {
                 <div class="x x4 ${d.p4==='W'?'show':''}">X</div>
                 ${getVMark(d)}
             `;
-            div.onclick = () => handleClick(r, c, d);
+            div.onclick = () => handleClick(r, c);
             grid.appendChild(div);
         }
     }
@@ -151,18 +183,21 @@ function getVMark(d) {
     return '';
 }
 
-function handleClick(r, c, cellData) {
-    const current = cellData[myRole] || 'N';
-    let next;
+function handleClick(r, c) {
+    if(!myRole) return;
+    const id = `r${r}c${c}`;
+    const d = gameState[id] || {};
+    let current = d[myRole] || 'N', next;
+    
     if(current === 'N') next = 'W';
     else if(current === 'W') {
-        // 防佔位
-        if(Object.keys(cellData).some(p => cellData[p] === 'V')) { alert("隊友已佔用"); return; }
-        next = 'V';
+        if(Object.keys(d).some(p => d[p] === 'V')) { alert("隊友已佔用此格"); next = 'N'; }
+        else next = 'V';
     } else next = 'N';
-
-    const updates = {};
-    updates[`rooms/${roomId}/grid/r${r}c${c}/${myRole}`] = next;
+    
+    // 準備更新數據
+    let updates = {};
+    updates[`rooms/${roomId}/grid/${id}/${myRole}`] = next;
 
     // 唯一解連動
     if(next === 'V') {
@@ -173,9 +208,28 @@ function handleClick(r, c, cellData) {
     db.ref().update(updates);
 }
 
-function resetAll() {
-    if(confirm("重置全場進入下一場？")) {
+function resetGame() { 
+    if(confirm("重置全場？")) {
         db.ref(`rooms/${roomId}/grid`).remove();
+    } 
+}
+
+function updatePeerList(players) {
+    const list = document.getElementById('peer-list');
+    list.innerHTML = '房間名單：<br>P1 (房主: 你)<br>';
+    const roles = ['p2', 'p3', 'p4'];
+    roles.forEach(r => {
+        if(players[r]) {
+            list.innerHTML += `${r.toUpperCase()} (連線中) <button class="kick-btn" onclick="kick('${r}')">踢</button><br>`;
+        } else {
+            list.innerHTML += `<span style="color:#555">${r.toUpperCase()} (空位)</span><br>`;
+        }
+    });
+}
+
+function kick(role) { 
+    if(confirm(`確定要踢出 ${role.toUpperCase()} 嗎？`)) {
+        db.ref(`rooms/${roomId}/players/${role}`).update({ kicked: true });
     }
 }
 </script>
